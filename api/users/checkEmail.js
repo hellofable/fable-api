@@ -1,4 +1,5 @@
 import { applyCORS, handlePreflight } from '../../utils/cors.js';
+import { log, randomUUID, logSuccessSampled } from '../../logger.js';
 
 let cachedPb;
 
@@ -12,6 +13,8 @@ async function getPocketBase() {
 }
 
 export default async function handler(req, res) {
+  const requestId = randomUUID();
+  const startTime = Date.now();
   // Handle CORS preflight
   if (handlePreflight(req, res)) {
     return; // Preflight handled
@@ -48,14 +51,16 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
   } catch (error) {
     if (error?.status === 404) {
+      log('info', 'check_email_not_found', { request_id: requestId });
       return res.status(200).json({ success: false });
     }
-
-    console.error('checkEmail error:', error);
+    log('error', 'check_email_error', { request_id: requestId, message: error?.message });
     return res.status(500).json({ error: 'Failed to check email' });
   } finally {
     if (pb) {
       pb.authStore.clear();
     }
+    const durationMs = Date.now() - startTime;
+    logSuccessSampled('check_email_ok', { request_id: requestId, duration_ms: durationMs });
   }
 }

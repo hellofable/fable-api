@@ -2,6 +2,7 @@
  * Shared CORS utility for all API endpoints
  * Validates origin against ALLOWED_ORIGINS environment variable
  */
+import { log } from '../logger.js';
 
 /**
  * Apply CORS headers to response
@@ -16,7 +17,7 @@ export function applyCORS(req, res) {
 
   // If no origins configured, reject (fail-safe)
   if (allowedOrigins.length === 0 || allowedOrigins[0] === '') {
-    console.error('[CORS] No ALLOWED_ORIGINS configured - rejecting request');
+    log('error', 'cors_config_missing');
     res.status(500).json({ error: 'CORS configuration error' });
     return false;
   }
@@ -32,11 +33,11 @@ export function applyCORS(req, res) {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
 
-    console.log('[CORS] Allowed origin:', origin);
+    log('debug', 'cors_allowed_origin', { origin });
     return true;
   } else {
     // Origin not allowed or missing
-    console.warn('[CORS] Forbidden origin:', origin || 'none');
+    log('warn', 'cors_forbidden_origin', { origin: origin || 'none' });
     res.status(403).json({ error: 'Forbidden origin' });
     return false;
   }

@@ -1,7 +1,10 @@
 import { getStripe, resolvePriceId } from '../../lib/stripe-config.js';
 import { applyCORS, handlePreflight } from '../../utils/cors.js';
+import { log, logSuccessSampled, randomUUID } from '../../logger.js';
 
 export default async function handler(req, res) {
+  const requestId = randomUUID();
+  const startTime = Date.now();
   // Handle CORS preflight
   if (handlePreflight(req, res)) {
     return; // Preflight handled
@@ -92,15 +95,20 @@ export default async function handler(req, res) {
       },
     });
 
-    return res.status(200).json({
+    const payload = {
       sessionId: session.id,
       url: session.url,
-    });
+    };
+    logSuccessSampled('stripe_checkout_public_ok', { request_id: requestId, plan: planKey });
+    return res.status(200).json(payload);
   } catch (error) {
-    console.error('Stripe checkout error:', error);
+    log('error', 'stripe_checkout_public_error', { request_id: requestId, message: error?.message });
     return res.status(500).json({
       error: 'Failed to create checkout session',
       details: error.message,
     });
+  } finally {
+    const durationMs = Date.now() - startTime;
+    log('debug', 'stripe_checkout_public_duration', { request_id: requestId, duration_ms: durationMs });
   }
 }

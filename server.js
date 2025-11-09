@@ -17,6 +17,7 @@ import stripeWebhook from './api/stripe/webhook.js';
 import stripeCreateCheckout from './api/stripe/create-checkout.js';
 import stripeCreateCheckoutNew from './api/stripe/createCheckoutSessionNew.js';
 import stripePortal from './api/stripe/portal.js';
+import { log } from './logger.js';
 
 const app = express();
 const PORT = process.env.PORT || 8302;
@@ -56,5 +57,5 @@ app.head('/api/stripe/webhook', (_req, res) => res.sendStatus(405));
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
 app.listen(PORT, () => {
-  console.log(`[fable-api] listening on :${PORT}`);
+  log('info', 'server_listen', { service: 'fable-api', port: Number(PORT) });
 });

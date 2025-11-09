@@ -1,5 +1,6 @@
 import { createPersistentWherebyMeeting } from '../../lib/whereby.js';
 import { applyCORS, handlePreflight } from '../../utils/cors.js';
+import { log, logSuccessSampled, randomUUID } from '../../logger.js';
 
 let PocketBaseCtor = null;
 
@@ -16,10 +17,10 @@ function decodePocketBaseToken(token) {
 		const [, payload] = token.split('.');
 		if (!payload) return null;
 		return JSON.parse(Buffer.from(payload, 'base64').toString('utf8'));
-	} catch (error) {
-		console.error('[voice/create] Failed to decode PocketBase token', error);
-		return null;
-	}
+  } catch (error) {
+    log('error', 'voice_decode_token_fail', { message: error?.message });
+    return null;
+  }
 }
 
 function escapeFilterValue(value) {
@@ -33,6 +34,8 @@ function respond(res, status, payload) {
 }
 
 export default async function handler(req, res) {
+  const requestId = randomUUID();
+  const startTime = Date.now();
 	// Handle CORS preflight
 	if (handlePreflight(req, res)) {
 		return; // Preflight handled
@@ -43,20 +46,21 @@ export default async function handler(req, res) {
 		return; // CORS check failed (403 already sent)
 	}
 
-	if (req.method !== 'POST') {
-		return respond(res, 405, {
-			success: false,
-			error: 'Method not allowed'
-		});
-	}
+  if (req.method !== 'POST') {
+    return respond(res, 405, {
+      success: false,
+      error: 'Method not allowed'
+    });
+  }
 
 	const authHeader = req.headers.authorization || '';
-	if (!authHeader.startsWith('Bearer ')) {
-		return respond(res, 401, {
-			success: false,
-			error: 'Missing Authorization bearer token'
-		});
-	}
+  if (!authHeader.startsWith('Bearer ')) {
+    log('error', 'voice_auth_fail', { request_id: requestId, reason: 'missing_bearer' });
+    return respond(res, 401, {
+      success: false,
+      error: 'Missing Authorization bearer token'
+    });
+  }
 
 	const token = authHeader.replace('Bearer ', '').trim();
 	const tokenPayload = decodePocketBaseToken(token);
@@ -66,20 +70,21 @@ export default async function handler(req, res) {
 		tokenPayload?.sub ||
 		null;
 
-	if (!userId) {
-		return respond(res, 401, {
-			success: false,
-			error: 'Invalid authentication token'
-		});
-	}
+  if (!userId) {
+    log('error', 'voice_auth_fail', { request_id: requestId, reason: 'invalid_token' });
+    return respond(res, 401, {
+      success: false,
+      error: 'Invalid authentication token'
+    });
+  }
 
-	if (!process.env.WHEREBY_API_KEY) {
-		console.error('[voice/create] WHEREBY_API_KEY is not configured');
-		return respond(res, 500, {
-			success: false,
-			error: 'Voice service is not configured'
-		});
-	}
+  if (!process.env.WHEREBY_API_KEY) {
+    log('error', 'voice_config_missing', { key: 'WHEREBY_API_KEY' });
+    return respond(res, 500, {
+      success: false,
+      error: 'Voice service is not configured'
+    });
+  }
 
 	const { screenplayId } = req.body || {};
 	const normalizedId = String(screenplayId ?? '').trim();
@@ -108,38 +113,41 @@ export default async function handler(req, res) {
 			}
 		}
 
-		if (scriptRecord?.userId && scriptRecord.userId !== userId) {
-			return respond(res, 403, {
-				success: false,
-				error: 'You do not have permission to manage this screenplay'
-			});
-		}
+    if (scriptRecord?.userId && scriptRecord.userId !== userId) {
+      return respond(res, 403, {
+        success: false,
+        error: 'You do not have permission to manage this screenplay'
+      });
+    }
 
 		const meeting = await createPersistentWherebyMeeting(normalizedId);
 		const issuedAt = new Date().toISOString();
 
-		return respond(res, 200, {
-			success: true,
-			provider: 'whereby',
-			url: meeting.roomUrl,
-			hostUrl: meeting.hostRoomUrl,
-			roomName: meeting.roomName,
-			meetingId: meeting.meetingId,
-			startDate: meeting.startDate,
-			endDate: meeting.endDate,
-			createdAt: issuedAt,
-			raw: meeting.raw
-		});
-	} catch (error) {
-		console.error('[voice/create] Failed to create Whereby meeting', error);
-		const status = error?.status ?? 500;
-		return respond(res, status, {
-			success: false,
-			error:
-				error?.message ||
-				'Failed to create voice room'
-		});
-	} finally {
+    const responsePayload = {
+      success: true,
+      provider: 'whereby',
+      url: meeting.roomUrl,
+      hostUrl: meeting.hostRoomUrl,
+      roomName: meeting.roomName,
+      meetingId: meeting.meetingId,
+      startDate: meeting.startDate,
+      endDate: meeting.endDate,
+      createdAt: issuedAt,
+      raw: meeting.raw
+    };
+    const durationMs = Date.now() - startTime;
+    logSuccessSampled('voice_ok', { request_id: requestId, screenplay_id: normalizedId, duration_ms: durationMs });
+    return respond(res, 200, responsePayload);
+  } catch (error) {
+    log('error', 'voice_create_error', { request_id: requestId, message: error?.message });
+    const status = error?.status ?? 500;
+    return respond(res, status, {
+      success: false,
+      error:
+        error?.message ||
+        'Failed to create voice room'
+    });
+  } finally {
 		if (pb) {
 			pb.authStore?.clear?.();
 		}

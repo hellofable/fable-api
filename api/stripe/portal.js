@@ -1,5 +1,6 @@
 import { getStripe } from '../../lib/stripe-config.js';
 import { applyCORS, handlePreflight } from '../../utils/cors.js';
+import { log, logSuccessSampled, randomUUID } from '../../logger.js';
 
 let cachedPb;
 async function getPocketBase() {
@@ -12,6 +13,8 @@ async function getPocketBase() {
 }
 
 export default async function handler(req, res) {
+  const requestId = randomUUID();
+  const startTime = Date.now();
   // Handle CORS preflight
   if (handlePreflight(req, res)) {
     return; // Preflight handled
@@ -50,14 +53,18 @@ export default async function handler(req, res) {
       return_url: returnUrl,
     });
 
-    return res.status(200).json({ url: session.url });
+    const payload = { url: session.url };
+    logSuccessSampled('stripe_portal_ok', { request_id: requestId });
+    return res.status(200).json(payload);
 
   } catch (error) {
-    console.error('Portal error:', error);
+    log('error', 'stripe_portal_error', { request_id: requestId, message: error?.message });
     return res.status(500).json({ error: error.message });
   } finally {
     if (pb) {
       pb.authStore.clear();
     }
+    const durationMs = Date.now() - startTime;
+    log('debug', 'stripe_portal_duration', { request_id: requestId, duration_ms: durationMs });
   }
 }

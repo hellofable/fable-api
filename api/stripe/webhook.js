@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { getStripe } from '../../lib/stripe-config.js';
+import { log, logSuccessSampled, randomUUID } from '../../logger.js';
 
 let cachedPb;
 async function getPocketBase() {
@@ -46,7 +47,7 @@ function normalizePlan(plan) {
 
 async function syncSubscriptionRecord(stripe, pb, subscription, fallbackEmail) {
   if (!subscription?.id) {
-    console.warn('Subscription sync skipped: missing subscription id');
+    log('warn', 'stripe_sync_skip', { reason: 'missing_subscription_id' });
     return;
   }
 
@@ -70,12 +71,12 @@ async function syncSubscriptionRecord(stripe, pb, subscription, fallbackEmail) {
         const customer = await stripe.customers.retrieve(subscription.customer);
         email = customer?.email || email;
       } catch (err) {
-        console.error('Failed to retrieve Stripe customer for subscription sync:', err);
+        log('error', 'stripe_sync_customer_fetch_fail', { message: err?.message });
       }
     }
 
     if (!email) {
-      console.warn(`Unable to determine email for subscription ${subscription.id}`);
+      log('warn', 'stripe_sync_missing_email', { subscription_id: subscription.id });
       return;
     }
 
@@ -86,7 +87,7 @@ async function syncSubscriptionRecord(stripe, pb, subscription, fallbackEmail) {
       || subscription.ended_at;
 
     if (isTerminal) {
-      console.log(`Skipping sync for terminal subscription ${subscription.id} - no user exists`);
+      log('info', 'stripe_sync_skip_terminal', { subscription_id: subscription.id });
       return;
     }
 
@@ -156,7 +157,7 @@ async function syncSubscriptionRecord(stripe, pb, subscription, fallbackEmail) {
         metadata: desiredMetadata,
       });
     } catch (err) {
-      console.error('Failed to update Stripe subscription metadata:', err);
+      log('error', 'stripe_update_subscription_metadata_fail', { subscription_id: subscription.id, message: err?.message });
     }
   }
 }
@@ -182,6 +183,8 @@ async function getRawBody(req) {
 }
 
 export default async function handler(req, res) {
+  const requestId = randomUUID();
+  const startTime = Date.now();
   if (req.method !== 'POST') {
     return res.status(405).end();
   }
@@ -201,7 +204,7 @@ export default async function handler(req, res) {
       process.env.STRIPE_WEBHOOK_SECRET
     );
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
+    log('error', 'stripe_webhook_sig_verify_fail', { request_id: requestId, message: err.message });
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
@@ -227,14 +230,16 @@ export default async function handler(req, res) {
         break;
 
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        log('info', 'stripe_webhook_unhandled', { request_id: requestId, event_type: event.type });
     }
 
     res.status(200).json({ received: true });
   } catch (error) {
-    console.error('Webhook handler error:', error);
+    log('error', 'stripe_webhook_error', { request_id: requestId, message: error?.message, event_type: event?.type });
     res.status(500).json({ error: error.message });
   } finally {
+    const durationMs = Date.now() - startTime;
+    logSuccessSampled('stripe_webhook_ok', { request_id: requestId, event_type: event?.type, duration_ms: durationMs });
     pb.authStore.clear();
   }
 }
@@ -264,7 +269,7 @@ async function handleCheckoutComplete(stripe, pb, session) {
     || session.customer_email;
 
   if (!session.subscription) {
-    console.warn('Checkout session missing subscription id; skipping subscription sync');
+    log('warn', 'stripe_checkout_missing_subscription', { session_id: session?.id });
     return;
   }
 
@@ -272,7 +277,7 @@ async function handleCheckoutComplete(stripe, pb, session) {
   try {
     subscription = await stripe.subscriptions.retrieve(session.subscription);
   } catch (err) {
-    console.error('Failed to retrieve subscription after checkout:', err);
+    log('error', 'stripe_checkout_retrieve_subscription_fail', { session_id: session?.id, message: err?.message });
   }
 
   if (!subscription) {
