@@ -168,10 +168,15 @@ export const config = {
 };
 
 async function getRawBody(req) {
+  // If body-parser's express.raw already parsed the body, use it
+  if (req.body && Buffer.isBuffer(req.body)) {
+    return req.body;
+  }
+  // Fallback: manually collect the raw stream
   return new Promise((resolve, reject) => {
-    let buffer = [];
-    req.on('data', chunk => buffer.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(buffer)));
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
 }
