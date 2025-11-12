@@ -47,6 +47,11 @@ async function getScriptRecord(pb, screenplayId) {
 async function destroyHpSessions(roomName, payload) {
   const base = process.env.HP_HTTP_BASE_URL;
   if (!base) return null;
+  log('info', 'hp_destroy_call', {
+    room_name: roomName,
+    actor: payload?.actor || 'unknown',
+    reason: payload?.reason || 'unspecified',
+  });
   const response = await fetch(`${base}/sessions/${encodeURIComponent(roomName)}/destroy`, {
     method: 'POST',
     headers: {
