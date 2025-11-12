@@ -28,6 +28,31 @@ function escapeFilterValue(value) {
     .replace(/"/g, '\\"');
 }
 
+async function resolveUserContext(pb, tokenPayload) {
+  const userId = tokenPayload?.recordId || tokenPayload?.id || tokenPayload?.sub || null;
+  let userRecord = null;
+  if (userId && pb) {
+    try {
+      userRecord = await pb.collection('users').getOne(userId);
+    } catch (error) {
+      log('warn', 'restore_fetch_user_failed', {
+        userId,
+        message: error?.message,
+      });
+    }
+  }
+
+  const displayName =
+    (userRecord?.name || '').trim() ||
+    userRecord?.username ||
+    tokenPayload?.name ||
+    tokenPayload?.username ||
+    tokenPayload?.email ||
+    'Collaborator';
+
+  return { userId, displayName };
+}
+
 async function getScriptRecord(pb, screenplayId) {
   const filter = `screenplayId = "${escapeFilterValue(screenplayId)}"`;
   return pb.collection('scripts').getFirstListItem(filter).catch(() => null);
@@ -87,9 +112,11 @@ export default async function handler(req, res) {
     }
 
     await clearScreenplayLock(screenplayId);
+
+    const { displayName } = await resolveUserContext(pb, tokenPayload);
     const roomName = buildRoomName(screenplayId);
     await unblockHpSessions(roomName, {
-      actor: tokenPayload?.name || tokenPayload?.username || tokenPayload?.email || 'Collaborator',
+      actor: displayName,
       reason: 'restore_unlock',
     });
 
