@@ -6,38 +6,17 @@ import {
   buildRoomName,
   updateScreenplayMetadata,
 } from './statusStore.js';
+import {
+  getPocketBaseCtor,
+  decodePocketBaseToken,
+  getScriptRecord,
+} from './helpers.js';
 
 const GITHUB_API_ROOT = 'https://api.github.com';
 const SCREENPLAY_FILE =
   process.env.SCREENPLAY_FILE ||
   process.env.SCREENPLAY_FILENAME ||
   'screenplay.fountain';
-
-let PocketBaseCtor = null;
-async function getPocketBaseCtor() {
-  if (!PocketBaseCtor) {
-    const mod = await import('pocketbase');
-    PocketBaseCtor = mod?.default ?? mod.PocketBase ?? mod;
-  }
-  return PocketBaseCtor;
-}
-
-function decodePocketBaseToken(token) {
-  try {
-    const [, payload] = token.split('.');
-    if (!payload) return null;
-    return JSON.parse(Buffer.from(payload, 'base64').toString('utf8'));
-  } catch (error) {
-    log('error', 'restore_lock_decode_fail', { message: error?.message });
-    return null;
-  }
-}
-
-function escapeFilterValue(value) {
-  return String(value ?? '')
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"');
-}
 
 async function resolveUserContext(pb, tokenPayload) {
   const userId = tokenPayload?.recordId || tokenPayload?.id || tokenPayload?.sub || null;
@@ -64,10 +43,6 @@ async function resolveUserContext(pb, tokenPayload) {
   return { userId, displayName };
 }
 
-async function getScriptRecord(pb, screenplayId) {
-  const filter = `screenplayId = "${escapeFilterValue(screenplayId)}"`;
-  return pb.collection('scripts').getFirstListItem(filter).catch(() => null);
-}
 
 async function destroyHpSessions(roomName, payload) {
   const base = process.env.HP_HTTP_BASE_URL;
@@ -300,6 +275,7 @@ export default async function handler(req, res) {
   const token = authHeader.replace('Bearer ', '').trim();
   const tokenPayload = decodePocketBaseToken(token);
   if (!tokenPayload) {
+    log('error', 'token_decode_fail', { endpoint: 'restore-with-lock' });
     return res.status(401).json({ error: 'Invalid authentication token' });
   }
 
