@@ -77,6 +77,8 @@ export default async function handler(req, res) {
       blockedBy: statusRecord?.hp_restore_blocked_by || null,
       latestRestoredCommitSha: statusRecord?.latestRestoredCommitSha || null,
       latestRestoredCommitSetAt: statusRecord?.latestRestoredCommitSetAt || null,
+      autosaveInterval: statusRecord?.autosaveInterval ?? null,
+      autosaveIntervalUpdatedAt: statusRecord?.autosaveIntervalUpdatedAt ?? null,
       activeUsers,
     });
   } catch (error) {
