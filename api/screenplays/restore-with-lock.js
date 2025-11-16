@@ -106,13 +106,27 @@ function scheduleRestoreShaCleanup({
   screenplayId,
   repoOwner,
   repoName,
+  branch,
   filePath,
   commitSha,
   githubToken,
 }) {
-  if (!screenplayId || !repoOwner || !repoName || !filePath || !commitSha || !githubToken) {
+  if (!screenplayId || !repoOwner || !repoName || !branch || !filePath || !commitSha || !githubToken) {
     return;
   }
+
+  log('info', 'restore_sha_poll_scheduled', {
+    screenplayId,
+    commitSha,
+    repoOwner,
+    repoName,
+    branch,
+  });
+
+  log('info', 'restore_sha_poll_started', {
+    screenplayId,
+    commitSha,
+  });
 
   clearScheduledShaJob(screenplayId);
   const job = { attempts: 0, timeoutId: null };
@@ -122,20 +136,20 @@ function scheduleRestoreShaCleanup({
     const currentJob = shaCleanupJobs.get(screenplayId);
     if (!currentJob) return;
     try {
-      const headFile = await getCurrentFileMetadata(
+      const headCommitShas = await getLatestCommitSha(
         repoOwner,
         repoName,
         filePath,
+        branch,
         githubToken,
       );
-      if (headFile?.sha === commitSha) {
-        await updateScreenplayMetadata(screenplayId, {
-          latestRestoredCommitSha: null,
-          latestRestoredCommitSetAt: null,
-          pendingRestoreSha: null,
-          restoreError: null,
-          restoresUpdatedAt: new Date().toISOString(),
-        });
+      log('info', 'restore_sha_head_check', {
+        screenplayId,
+        commitSha,
+        headCommitShas,
+        found: headCommitShas.includes(commitSha),
+      });
+      if (headCommitShas.includes(commitSha)) {
         log('info', 'restore_sha_synced', { screenplayId, commitSha });
         clearScheduledShaJob(screenplayId);
         return;
@@ -153,6 +167,7 @@ function scheduleRestoreShaCleanup({
         await updateScreenplayMetadata(screenplayId, {
           latestRestoredCommitSha: null,
           latestRestoredCommitSetAt: null,
+          pendingRestoreSha: null,
           restoreError: 'Restore polling timed out; manual refresh required',
           restoresUpdatedAt: new Date().toISOString(),
         });
@@ -237,6 +252,23 @@ async function getCurrentFileMetadata(owner, repo, filePath, token) {
   return response.json();
 }
 
+async function getLatestCommitSha(owner, repo, filePath, branch, token) {
+  const response = await githubFetch(
+    `/repos/${owner}/${repo}/commits?path=${encodedPath(filePath)}&sha=${encodeURIComponent(branch)}&per_page=5&page=1`,
+    token,
+    { method: 'GET' },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to fetch latest commit (${response.status}): ${text}`);
+  }
+  const commits = await response.json();
+  if (!commits || commits.length === 0) {
+    throw new Error('No commits found for this file');
+  }
+  return commits.map(c => c.sha);
+}
+
 async function updateScreenplayFile(owner, repo, filePath, content, sha, message, token) {
   const body = {
     message,
@@ -288,6 +320,7 @@ export default async function handler(req, res) {
     revisionSha,
     repoOwner,
     repoName,
+    repoBranch = 'main',
     githubToken,
     screenplayFile = SCREENPLAY_FILE,
   } = req.body || {};
@@ -381,6 +414,11 @@ export default async function handler(req, res) {
     }
 
     const latestCommitSha = commitResult?.commit?.sha || null;
+    log('info', 'restore_commit_created', {
+      screenplayId,
+      latestCommitSha,
+      commitMessage: commitResult?.commit?.message ?? null,
+    });
     const restoreCompletedAt = new Date().toISOString();
 
     await updateScreenplayMetadata(screenplayId, {
@@ -402,6 +440,7 @@ export default async function handler(req, res) {
         screenplayId,
         repoOwner,
         repoName,
+        branch: repoBranch,
         filePath: screenplayFile,
         commitSha: latestCommitSha,
         githubToken,

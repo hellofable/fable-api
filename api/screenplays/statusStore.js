@@ -126,3 +126,25 @@ export async function clearScreenplayLock(screenplayId) {
 export async function updateScreenplayMetadata(screenplayId, patch) {
   return applyStatusUpdate(screenplayId, patch);
 }
+
+export async function updateCollaborators(screenplayId, collaborators) {
+  return applyStatusUpdate(screenplayId, {
+    collaborators: collaborators ?? [],
+    collaboratorsUpdatedAt: new Date().toISOString(),
+  });
+}
+
+export async function findUserByGithubId(githubId) {
+  if (!githubId) return null;
+  const pb = await getAdminClient();
+  try {
+    return await pb
+      .collection('users')
+      .getFirstListItem(`githubUserIds ?~ ${escapeFilterValue(githubId)}`);
+  } catch (error) {
+    if (error?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}

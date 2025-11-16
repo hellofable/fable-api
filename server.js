@@ -22,6 +22,7 @@ import restoreStatus from './api/screenplays/restore-status.js';
 import restoreWithLock from './api/screenplays/restore-with-lock.js';
 import restoreUnlock from './api/screenplays/restore-lock.js';
 import autosave from './api/screenplays/autosave.js';
+import syncCollaborators from './api/screenplays/sync-collaborators.js';
 
 const app = express();
 const PORT = process.env.PORT || 8302;
@@ -41,6 +42,7 @@ app.post('/api/github-oauth', express.json({ limit: '2mb' }), (req, res) => gith
 app.post('/api/ai', express.json({ limit: '2mb' }), (req, res) => ai(req, res));
 app.post('/api/users/checkEmail', express.json({ limit: '2mb' }), (req, res) => checkEmail(req, res));
 app.post('/api/voice/create', express.json({ limit: '2mb' }), (req, res) => voiceCreate(req, res));
+app.post('/api/screenplays/:id/sync-collaborators', express.json({ limit: '2mb' }), (req, res) => syncCollaborators(req, res));
 app.get('/api/screenplays/:id/restore-status', (req, res) => restoreStatus(req, res));
 app.post('/api/screenplays/:id/restore-with-lock', express.json({ limit: '2mb' }), (req, res) => restoreWithLock(req, res));
 app.delete('/api/screenplays/:id/restore-lock', (req, res) => restoreUnlock(req, res));

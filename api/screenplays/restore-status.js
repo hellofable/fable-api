@@ -1,6 +1,6 @@
 import { applyCORS, handlePreflight } from '../../utils/cors.js';
 import { log } from '../../logger.js';
-import { readScreenplayStatus, buildRoomName } from './statusStore.js';
+import { readScreenplayStatus, buildRoomName, updateScreenplayMetadata } from './statusStore.js';
 import {
   getPocketBaseCtor,
   decodePocketBaseToken,
@@ -31,9 +31,6 @@ async function fetchHpSessionStatus(roomName) {
 export default async function handler(req, res) {
   if (handlePreflight(req, res)) return;
   if (!applyCORS(req, res)) return;
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
 
   const id = req.query?.id || req.params?.id;
   const screenplayId = String(id ?? '').trim();
@@ -53,36 +50,90 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid authentication token' });
   }
 
-  try {
-    const PocketBase = await getPocketBaseCtor();
-    const pb = new PocketBase(process.env.POCKETBASE_URL);
-    pb.authStore.save(token, null);
+  if (req.method === 'GET') {
+    try {
+      const PocketBase = await getPocketBaseCtor();
+      const pb = new PocketBase(process.env.POCKETBASE_URL);
+      pb.authStore.save(token, null);
 
-    const scriptRecord = await getScriptRecord(pb, screenplayId);
-    if (!scriptRecord) {
-      return res.status(404).json({ error: 'Screenplay not found' });
+      const scriptRecord = await getScriptRecord(pb, screenplayId);
+      if (!scriptRecord) {
+        return res.status(404).json({ error: 'Screenplay not found' });
+      }
+
+      const statusRecord = await readScreenplayStatus(screenplayId);
+      const roomName = buildRoomName(screenplayId);
+      const hpStatus = await fetchHpSessionStatus(roomName);
+      const activeUsers = Array.isArray(hpStatus?.activeUsers)
+        ? hpStatus.activeUsers
+        : [];
+
+      return res.status(200).json({
+        screenplayId,
+        blocked: Boolean(statusRecord?.hp_restore_blocked),
+        blockedAt: statusRecord?.hp_restore_blocked_at || null,
+        blockedBy: statusRecord?.hp_restore_blocked_by || null,
+        latestRestoredCommitSha: statusRecord?.latestRestoredCommitSha || null,
+        latestRestoredCommitSetAt: statusRecord?.latestRestoredCommitSetAt || null,
+        autosaveInterval: statusRecord?.autosaveInterval ?? null,
+        autosaveIntervalUpdatedAt: statusRecord?.autosaveIntervalUpdatedAt ?? null,
+        pendingRestoreSha: statusRecord?.pendingRestoreSha ?? null,
+        restoresUpdatedAt: statusRecord?.restoresUpdatedAt ?? null,
+        restoreError: statusRecord?.restoreError ?? null,
+        collaborators: statusRecord?.collaborators ?? [],
+        collaboratorsUpdatedAt: statusRecord?.collaboratorsUpdatedAt ?? null,
+        activeUsers,
+      });
+    } catch (error) {
+      log('error', 'restore_status_error', { message: error?.message, screenplayId });
+      return res.status(500).json({ error: 'Failed to load restore status' });
     }
-
-    const statusRecord = await readScreenplayStatus(screenplayId);
-    const roomName = buildRoomName(screenplayId);
-    const hpStatus = await fetchHpSessionStatus(roomName);
-    const activeUsers = Array.isArray(hpStatus?.activeUsers)
-      ? hpStatus.activeUsers
-      : [];
-
-    return res.status(200).json({
-      screenplayId,
-      blocked: Boolean(statusRecord?.hp_restore_blocked),
-      blockedAt: statusRecord?.hp_restore_blocked_at || null,
-      blockedBy: statusRecord?.hp_restore_blocked_by || null,
-      latestRestoredCommitSha: statusRecord?.latestRestoredCommitSha || null,
-      latestRestoredCommitSetAt: statusRecord?.latestRestoredCommitSetAt || null,
-      autosaveInterval: statusRecord?.autosaveInterval ?? null,
-      autosaveIntervalUpdatedAt: statusRecord?.autosaveIntervalUpdatedAt ?? null,
-      activeUsers,
-    });
-  } catch (error) {
-    log('error', 'restore_status_error', { message: error?.message, screenplayId });
-    return res.status(500).json({ error: 'Failed to load restore status' });
   }
+
+  if (req.method === 'PATCH') {
+    const { clearPending, sha } = req.body || {};
+    if (!clearPending) {
+      return res.status(400).json({ error: 'Invalid request' });
+    }
+    try {
+      const statusRecord = await readScreenplayStatus(screenplayId);
+      const currentSha = statusRecord?.pendingRestoreSha ?? null;
+      if (!currentSha) {
+        return res.status(200).json({
+          screenplayId,
+          pendingRestoreSha: null,
+          restoreError: null,
+          restoresUpdatedAt: statusRecord?.restoresUpdatedAt ?? null,
+        });
+      }
+
+      if (sha && sha !== currentSha) {
+        return res.status(409).json({
+          error: 'Pending SHA mismatch',
+          pendingRestoreSha: currentSha,
+        });
+      }
+
+      await updateScreenplayMetadata(screenplayId, {
+        pendingRestoreSha: null,
+        restoreError: null,
+        restoresUpdatedAt: new Date().toISOString(),
+      });
+
+      return res.status(200).json({
+        screenplayId,
+        pendingRestoreSha: null,
+        restoreError: null,
+        restoresUpdatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      log('error', 'restore_status_patch_error', {
+        message: error?.message,
+        screenplayId,
+      });
+      return res.status(500).json({ error: 'Failed to update restore status' });
+    }
+  }
+
+  return res.status(405).json({ error: 'Method not allowed' });
 }
