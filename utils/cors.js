@@ -29,7 +29,7 @@ export function applyCORS(req, res) {
   if (origin && allowedOrigins.includes(origin)) {
     // Origin is allowed - set CORS headers
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
 
