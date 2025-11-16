@@ -60,6 +60,7 @@ async function ensureStatusRecord(screenplayId) {
   let record = await getStatusRecord(screenplayId);
   if (record) return record;
   const pb = await getAdminClient();
+  const now = new Date().toISOString();
   record = await pb.collection(STATUS_COLLECTION).create({
     screenplayId,
     hp_restore_blocked: false,
@@ -67,8 +68,8 @@ async function ensureStatusRecord(screenplayId) {
     hp_restore_blocked_by: null,
     latestRestoredCommitSha: null,
     latestRestoredCommitSetAt: null,
-    autosaveInterval: null,
-    autosaveIntervalUpdatedAt: null,
+    autosaveInterval: 0,
+    autosaveIntervalUpdatedAt: now,
     collaborators: [],
     collaboratorsUpdatedAt: null,
     pendingRestoreSha: null,
@@ -82,23 +83,23 @@ async function ensureStatusRecord(screenplayId) {
 export async function readScreenplayStatus(screenplayId) {
   const record = await getStatusRecord(screenplayId);
   if (!record) {
-  return {
-    screenplayId,
-    hp_restore_blocked: false,
-    hp_restore_blocked_at: null,
-    hp_restore_blocked_by: null,
-    latestRestoredCommitSha: null,
-    latestRestoredCommitSetAt: null,
-    autosaveInterval: null,
-    autosaveIntervalUpdatedAt: null,
-    collaborators: [],
-    collaboratorsUpdatedAt: null,
-    pendingRestoreSha: null,
-    restoresUpdatedAt: null,
-    restoreError: null,
-    collaboratorIds: null,
-  };
-}
+    return {
+      screenplayId,
+      hp_restore_blocked: false,
+      hp_restore_blocked_at: null,
+      hp_restore_blocked_by: null,
+      latestRestoredCommitSha: null,
+      latestRestoredCommitSetAt: null,
+      autosaveInterval: 0,
+      autosaveIntervalUpdatedAt: null,
+      collaborators: [],
+      collaboratorsUpdatedAt: null,
+      pendingRestoreSha: null,
+      restoresUpdatedAt: null,
+      restoreError: null,
+      collaboratorIds: null,
+    };
+  }
   return record;
 }
 
