@@ -87,7 +87,7 @@ export default async function handler(req, res) {
         selected_plan: planKey
       },
       subscription_data: {
-        trial_period_days: 7,
+        trial_period_days: 10,
         metadata: {
           pending_user_email: normalizedEmail,
           plan: planKey,
