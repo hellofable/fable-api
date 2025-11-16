@@ -40,7 +40,8 @@ export default async function handler(req, res) {
     const normalizedPlan = plan.toLowerCase();
     const isAnnual = normalizedPlan === 'annual' || normalizedPlan === 'yearly';
     const isMonthly = normalizedPlan === 'monthly';
-    if (!isAnnual && !isMonthly) {
+    const isTestPlan = normalizedPlan === 'test';
+    if (!isAnnual && !isMonthly && !isTestPlan) {
       return res.status(400).json({ error: 'Invalid plan' });
     }
 
@@ -64,7 +65,7 @@ export default async function handler(req, res) {
       customerId = customer.id;
     }
 
-    const planKey = isAnnual ? 'annual' : 'monthly';
+    const planKey = isAnnual ? 'annual' : isTestPlan ? 'test' : 'monthly';
     const priceId = resolvePriceId(planKey);
 
     const session = await stripe.checkout.sessions.create({

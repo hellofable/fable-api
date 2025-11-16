@@ -74,6 +74,7 @@ async function ensureStatusRecord(screenplayId) {
     pendingRestoreSha: null,
     restoresUpdatedAt: null,
     restoreError: null,
+    collaboratorIds: null,
   });
   return record;
 }
@@ -81,22 +82,23 @@ async function ensureStatusRecord(screenplayId) {
 export async function readScreenplayStatus(screenplayId) {
   const record = await getStatusRecord(screenplayId);
   if (!record) {
-    return {
-      screenplayId,
-      hp_restore_blocked: false,
-      hp_restore_blocked_at: null,
-      hp_restore_blocked_by: null,
-      latestRestoredCommitSha: null,
-      latestRestoredCommitSetAt: null,
-      autosaveInterval: null,
-      autosaveIntervalUpdatedAt: null,
-      collaborators: [],
-      collaboratorsUpdatedAt: null,
-      pendingRestoreSha: null,
-      restoresUpdatedAt: null,
-      restoreError: null,
-    };
-  }
+  return {
+    screenplayId,
+    hp_restore_blocked: false,
+    hp_restore_blocked_at: null,
+    hp_restore_blocked_by: null,
+    latestRestoredCommitSha: null,
+    latestRestoredCommitSetAt: null,
+    autosaveInterval: null,
+    autosaveIntervalUpdatedAt: null,
+    collaborators: [],
+    collaboratorsUpdatedAt: null,
+    pendingRestoreSha: null,
+    restoresUpdatedAt: null,
+    restoreError: null,
+    collaboratorIds: null,
+  };
+}
   return record;
 }
 
@@ -128,10 +130,21 @@ export async function updateScreenplayMetadata(screenplayId, patch) {
 }
 
 export async function updateCollaborators(screenplayId, collaborators) {
+  const ids = buildCollaboratorIds(collaborators);
   return applyStatusUpdate(screenplayId, {
     collaborators: collaborators ?? [],
     collaboratorsUpdatedAt: new Date().toISOString(),
+    collaboratorIds: ids,
   });
+}
+
+function buildCollaboratorIds(collaborators = []) {
+  const ids = Array.isArray(collaborators)
+    ? collaborators
+        .map((entry) => (entry && typeof entry.id === 'string' ? entry.id.trim() : ''))
+        .filter((value) => !!value)
+    : [];
+  return ids.length ? ids : null;
 }
 
 export async function findUserByGithubId(githubId) {
