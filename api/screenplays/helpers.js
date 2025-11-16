@@ -24,7 +24,39 @@ export function escapeFilterValue(value) {
     .replace(/"/g, '\\"');
 }
 
-export async function getScriptRecord(pb, screenplayId) {
-  const filter = `screenplayId = "${escapeFilterValue(screenplayId)}"`;
-  return pb.collection('scripts').getFirstListItem(filter).catch(() => null);
+export async function getScriptRecord(pb, screenplayId, options = {}) {
+  if (!screenplayId) {
+    return null;
+  }
+
+  const { userId = null, ensureUserRecord = false } = options;
+  const escapedScriptId = escapeFilterValue(screenplayId);
+  const sanitizedUserId = escapeFilterValue(userId);
+
+  if (userId) {
+    const userFilter = `screenplayId = "${escapedScriptId}" && userId = "${sanitizedUserId}"`;
+    const userRecord = await pb.collection('scripts').getFirstListItem(userFilter).catch(() => null);
+    if (userRecord) {
+      return userRecord;
+    }
+  }
+
+  const filter = `screenplayId = "${escapedScriptId}"`;
+  const record = await pb.collection('scripts').getFirstListItem(filter).catch(() => null);
+  if (record) {
+    return record;
+  }
+
+  if (ensureUserRecord && userId) {
+    try {
+      return await pb.collection('scripts').create({
+        screenplayId,
+        userId,
+      });
+    } catch (error) {
+      return null;
+    }
+  }
+
+  return null;
 }

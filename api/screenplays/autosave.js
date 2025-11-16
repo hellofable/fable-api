@@ -43,7 +43,12 @@ export default async function handler(req, res) {
     const pb = new PocketBase(process.env.POCKETBASE_URL);
     pb.authStore.save(token, null);
 
-    const scriptRecord = await getScriptRecord(pb, screenplayId);
+    const requesterId =
+      tokenPayload?.recordId ?? tokenPayload?.id ?? tokenPayload?.sub ?? null;
+    const scriptRecord = await getScriptRecord(pb, screenplayId, {
+      userId: requesterId,
+      ensureUserRecord: Boolean(requesterId),
+    });
     if (!scriptRecord) {
       return res.status(404).json({ error: 'Screenplay not found' });
     }
