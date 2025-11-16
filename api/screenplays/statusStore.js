@@ -69,24 +69,34 @@ async function ensureStatusRecord(screenplayId) {
     latestRestoredCommitSetAt: null,
     autosaveInterval: null,
     autosaveIntervalUpdatedAt: null,
+    collaborators: [],
+    collaboratorsUpdatedAt: null,
+    pendingRestoreSha: null,
+    restoresUpdatedAt: null,
+    restoreError: null,
   });
   return record;
 }
 
 export async function readScreenplayStatus(screenplayId) {
   const record = await getStatusRecord(screenplayId);
-	if (!record) {
-	  return {
-	    screenplayId,
-	    hp_restore_blocked: false,
-	    hp_restore_blocked_at: null,
-	    hp_restore_blocked_by: null,
-	    latestRestoredCommitSha: null,
-	    latestRestoredCommitSetAt: null,
-	    autosaveInterval: null,
-	    autosaveIntervalUpdatedAt: null,
-	  };
-	}
+  if (!record) {
+    return {
+      screenplayId,
+      hp_restore_blocked: false,
+      hp_restore_blocked_at: null,
+      hp_restore_blocked_by: null,
+      latestRestoredCommitSha: null,
+      latestRestoredCommitSetAt: null,
+      autosaveInterval: null,
+      autosaveIntervalUpdatedAt: null,
+      collaborators: [],
+      collaboratorsUpdatedAt: null,
+      pendingRestoreSha: null,
+      restoresUpdatedAt: null,
+      restoreError: null,
+    };
+  }
   return record;
 }
 
@@ -107,6 +117,9 @@ export async function clearScreenplayLock(screenplayId) {
     hp_restore_blocked_by: null,
     latestRestoredCommitSha: null,
     latestRestoredCommitSetAt: null,
+    pendingRestoreSha: null,
+    restoresUpdatedAt: null,
+    restoreError: null,
   });
 }
 

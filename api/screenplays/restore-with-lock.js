@@ -132,6 +132,9 @@ function scheduleRestoreShaCleanup({
         await updateScreenplayMetadata(screenplayId, {
           latestRestoredCommitSha: null,
           latestRestoredCommitSetAt: null,
+          pendingRestoreSha: null,
+          restoreError: null,
+          restoresUpdatedAt: new Date().toISOString(),
         });
         log('info', 'restore_sha_synced', { screenplayId, commitSha });
         clearScheduledShaJob(screenplayId);
@@ -150,6 +153,8 @@ function scheduleRestoreShaCleanup({
         await updateScreenplayMetadata(screenplayId, {
           latestRestoredCommitSha: null,
           latestRestoredCommitSetAt: null,
+          restoreError: 'Restore polling timed out; manual refresh required',
+          restoresUpdatedAt: new Date().toISOString(),
         });
       } catch (clearError) {
         log('warn', 'restore_sha_timeout_clear_fail', {
@@ -367,6 +372,11 @@ export default async function handler(req, res) {
         screenplayId,
         message: error?.message,
       });
+      await updateScreenplayMetadata(screenplayId, {
+        pendingRestoreSha: null,
+        restoreError: error?.message || 'GitHub restore failed',
+        restoresUpdatedAt: new Date().toISOString(),
+      });
       throw error;
     }
 
@@ -382,6 +392,9 @@ export default async function handler(req, res) {
       restoredFrom: revisionSha,
       latestRestoredCommitSha: latestCommitSha,
       latestRestoredCommitSetAt: latestCommitSha ? restoreCompletedAt : null,
+      pendingRestoreSha: latestCommitSha,
+      restoreError: null,
+      restoresUpdatedAt: restoreCompletedAt,
     });
 
     if (latestCommitSha) {
