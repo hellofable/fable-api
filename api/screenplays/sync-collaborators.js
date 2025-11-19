@@ -56,8 +56,9 @@ async function fetchGitHubCollaborators({ repoOwner, repoName, githubToken }) {
 function mapExistingCollaborators(existing = []) {
   const lookup = new Map();
   for (const collaborator of existing) {
-    if (collaborator?.id) {
-      lookup.set(collaborator.id, collaborator);
+    const id = collaborator?.id ? String(collaborator.id).trim() : "";
+    if (id) {
+      lookup.set(id, collaborator);
     }
   }
   return lookup;
@@ -71,6 +72,11 @@ function getCollaboratorName(userRecord, fallback) {
     'Collaborator'
   );
 }
+
+const INCLUDE_GITHUB_METADATA =
+  String(process.env.INCLUDE_GITHUB_COLLABORATOR_METADATA ?? "")
+    .toLowerCase()
+    .startsWith("true");
 
 async function buildCollaboratorsPayload(screenplayId, githubMembers) {
   const existingStatus = await readScreenplayStatus(screenplayId);
@@ -86,13 +92,30 @@ async function buildCollaboratorsPayload(screenplayId, githubMembers) {
     if (seen.has(userRecord.id)) continue;
     seen.add(userRecord.id);
 
-    const previousEntry = existingMap.get(userRecord.id);
-    results.push({
-      id: userRecord.id,
+    const collaboratorId = String(userRecord.id ?? "").trim();
+    if (!collaboratorId) continue;
+
+    const previousEntry = existingMap.get(collaboratorId);
+    const avatarUrl =
+      member?.avatar_url ||
+      previousEntry?.avatarUrl ||
+      (previousEntry?.githubMetadata?.avatar_url ??
+        previousEntry?.githubMetadata?.avatarUrl) ||
+      null;
+
+    const collaboratorEntry = {
+      id: collaboratorId,
       name: getCollaboratorName(userRecord, member.login),
       githubUsername: member.login ?? previousEntry?.githubUsername ?? null,
       joinedAt: previousEntry?.joinedAt || now,
-    });
+      avatarUrl,
+    };
+
+    if (INCLUDE_GITHUB_METADATA) {
+      collaboratorEntry.githubMetadata = { ...member };
+    }
+
+    results.push(collaboratorEntry);
   }
 
   return results;

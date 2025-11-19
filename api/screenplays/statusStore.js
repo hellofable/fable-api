@@ -136,6 +136,7 @@ export async function updateCollaborators(screenplayId, collaborators) {
     collaborators: collaborators ?? [],
     collaboratorsUpdatedAt: new Date().toISOString(),
     collaboratorIds: ids,
+    collaboratorsId: ids,
   });
 }
 

@@ -20,10 +20,18 @@ import stripePortal from './api/stripe/portal.js';
 import { log } from './logger.js';
 import restoreWithLock from './api/screenplays/restore-with-lock.js';
 import restoreUnlock from './api/screenplays/restore-lock.js';
+import saveLockHandler from './api/screenplays/save-lock.js';
+import seedLockHandler from './api/screenplays/seed-lock.js';
 import syncCollaborators from './api/screenplays/sync-collaborators.js';
+import tts from './api/tts.js';
 
 const app = express();
 const PORT = process.env.PORT || 8302;
+const openAiKey = process.env.OPENAI_API_KEY ?? "";
+const maskedOpenAiKey =
+  openAiKey && openAiKey.length > 8
+    ? `${openAiKey.slice(0, 6)}…${openAiKey.slice(-4)}`
+    : openAiKey || "unset";
 
 // CORS for all API routes
 app.use('/api', cors());
@@ -42,7 +50,13 @@ app.post('/api/users/checkEmail', express.json({ limit: '2mb' }), (req, res) => 
 app.post('/api/voice/create', express.json({ limit: '2mb' }), (req, res) => voiceCreate(req, res));
 app.post('/api/screenplays/:id/sync-collaborators', express.json({ limit: '2mb' }), (req, res) => syncCollaborators(req, res));
 app.post('/api/screenplays/:id/restore-with-lock', express.json({ limit: '2mb' }), (req, res) => restoreWithLock(req, res));
+app.post('/api/screenplays/:id/save-lock', express.json({ limit: '2mb' }), (req, res) => saveLockHandler(req, res));
+app.delete('/api/screenplays/:id/save-lock', (req, res) => saveLockHandler(req, res));
+app.options('/api/screenplays/:id/save-lock', (req, res) => saveLockHandler(req, res));
+app.post('/api/screenplays/:id/seed-lock', express.json({ limit: '2mb' }), (req, res) => seedLockHandler(req, res));
+app.options('/api/screenplays/:id/seed-lock', (req, res) => seedLockHandler(req, res));
 app.delete('/api/screenplays/:id/restore-lock', (req, res) => restoreUnlock(req, res));
+app.post('/api/tts', express.json({ limit: '2mb' }), (req, res) => tts(req, res));
 
 // Stripe webhook requires raw body for signature verification
 app.post(
@@ -62,6 +76,7 @@ app.head('/api/stripe/webhook', (_req, res) => res.sendStatus(405));
 // Fallback
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
+log('info', 'server_config', { openai_key: maskedOpenAiKey });
 app.listen(PORT, () => {
   log('info', 'server_listen', { service: 'fable-api', port: Number(PORT) });
 });
