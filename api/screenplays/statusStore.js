@@ -61,24 +61,28 @@ async function ensureStatusRecord(screenplayId) {
   if (record) return record;
   const pb = await getAdminClient();
   const now = new Date().toISOString();
-  record = await pb.collection(STATUS_COLLECTION).create({
-    screenplayId,
-    hp_restore_blocked: false,
+    record = await pb.collection(STATUS_COLLECTION).create({
+      screenplayId,
+      hp_restore_blocked: false,
     hp_restore_blocked_at: null,
     hp_restore_blocked_by: null,
     latestRestoredCommitSha: null,
     latestRestoredCommitSetAt: null,
-    autosaveInterval: 0,
-    autosaveIntervalUpdatedAt: now,
-    collaborators: [],
-    collaboratorsUpdatedAt: null,
-    pendingRestoreSha: null,
-    restoresUpdatedAt: null,
-    restoreError: null,
-    collaboratorIds: null,
-  });
-  return record;
-}
+      autosaveInterval: 0,
+      autosaveIntervalUpdatedAt: now,
+      collaborators: [],
+      collaboratorsUpdatedAt: null,
+      pendingRestoreSha: null,
+      restoresUpdatedAt: null,
+      restoreError: null,
+      collaboratorIds: null,
+      seedLocked: false,
+      seedLockedBy: null,
+      seedLockedAt: null,
+      seededAt: null,
+    });
+    return record;
+  }
 
 export async function readScreenplayStatus(screenplayId) {
   const record = await getStatusRecord(screenplayId);
@@ -98,6 +102,10 @@ export async function readScreenplayStatus(screenplayId) {
       restoresUpdatedAt: null,
       restoreError: null,
       collaboratorIds: null,
+      seedLocked: false,
+      seedLockedBy: null,
+      seedLockedAt: null,
+      seededAt: null,
     };
   }
   return record;

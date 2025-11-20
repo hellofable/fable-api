@@ -1,7 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import { applyCORS, handlePreflight } from '../../utils/cors.js';
 import { log } from '../../logger.js';
-import { buildRoomName, readScreenplayStatus } from './statusStore.js';
+import {
+  readScreenplayStatus,
+  updateScreenplayMetadata,
+} from './statusStore.js';
 import {
   getPocketBaseCtor,
   decodePocketBaseToken,
@@ -22,68 +24,32 @@ function isUserCollaborator(statusRecord, userId) {
   return detailed.some((entry) => entry?.id === userId);
 }
 
-function ensureHpConfig() {
-  const base = (process.env.HP_HTTP_BASE_URL || '').replace(/\/+$/, '');
-  if (!base) {
-    throw new Error('hp_not_configured');
+async function resolveUserContext(pb, tokenPayload) {
+  const userId =
+    tokenPayload?.recordId ||
+    tokenPayload?.id ||
+    tokenPayload?.sub ||
+    tokenPayload?.userId ||
+    null;
+  let userRecord = null;
+  if (userId && pb) {
+    try {
+      userRecord = await pb.collection('users').getOne(userId);
+    } catch (error) {
+      log('warn', 'seed_lock_user_fetch_failed', {
+        userId,
+        message: error?.message,
+      });
+    }
   }
-  const token = process.env.HP_INTERNAL_TOKEN || '';
-  return { base, token };
-}
-
-async function requestHpSeedStatus(roomName, config) {
-  const url = `${config.base}/sessions/${encodeURIComponent(roomName)}/seed-status`;
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'X-Internal-Token': config.token,
-      },
-    });
-    if (response.status === 404) {
-      return { ok: true, data: { seeded: false, locked: false, epoch: 1 } };
-    }
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      return { ok: false, status: response.status, body };
-    }
-    const data = await response.json().catch(() => null);
-    return { ok: true, data };
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-}
-
-async function requestHpSeedProbe(roomName, config, payload) {
-  const url = `${config.base}/sessions/${encodeURIComponent(roomName)}/seed-probe`;
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Token': config.token,
-      },
-      body: JSON.stringify(payload || {}),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (response.status === 409) {
-      return { ok: false, status: 409, data };
-    }
-    if (!response.ok) {
-      const errorText = data?.error || await response.text().catch(() => '');
-      return { ok: false, status: response.status, error: errorText };
-    }
-    return { ok: true, data };
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
+  return { userId, userRecord };
 }
 
 export default async function handler(req, res) {
   if (handlePreflight(req, res)) return;
   if (!applyCORS(req, res)) return;
 
-  if (req.method !== 'POST') {
+  if (!['POST', 'DELETE'].includes(req.method)) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
@@ -116,13 +82,9 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'Screenplay not found' });
     }
 
-    const userId =
-      tokenPayload?.recordId ||
-      tokenPayload?.id ||
-      tokenPayload?.sub ||
-      tokenPayload?.userId ||
-      null;
+    const { userId } = await resolveUserContext(pb, tokenPayload);
     if (!userId) {
+      log('warn', 'seed_lock_missing_user_id', { screenplayId });
       return res.status(401).json({ error: 'Invalid user context' });
     }
 
@@ -135,95 +97,63 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'not_collaborator' });
     }
 
-    let hpConfig;
-    try {
-      hpConfig = ensureHpConfig();
-    } catch (error) {
-      log('warn', 'seed_lock_hp_missing', { screenplayId });
-      return res.status(503).json({ error: 'hp_unavailable' });
-    }
-
-    const roomName = buildRoomName(screenplayId);
-    const statusResult = await requestHpSeedStatus(roomName, hpConfig);
-    if (!statusResult.ok) {
-      log('warn', 'seed_lock_hp_status_error', {
-        screenplayId,
-        error: statusResult.error ?? statusResult.body,
-      });
-      return res.status(503).json({ error: 'hp_unavailable' });
-    }
-
-    const hpState = statusResult.data || {};
-    log('info', 'seed_lock_hp_status', {
-      screenplayId,
-      seeded: Boolean(hpState.seeded),
-      locked: Boolean(hpState.locked),
-      epoch: hpState.epoch,
-    });
-    if (hpState.seeded) {
-      log('info', 'seed_lock_hp_denial', {
-        screenplayId,
-        reason: 'already_seeded',
-        epoch: hpState.epoch,
-      });
-      return res.status(409).json({
-        granted: false,
-        reason: 'already_seeded',
-        epoch: hpState.epoch ?? null,
-      });
-    }
-    if (hpState.locked) {
-      log('info', 'seed_lock_hp_denial', {
-        screenplayId,
-        reason: 'already_locked',
-        epoch: hpState.epoch,
-      });
-      return res.status(409).json({
-        granted: false,
-        reason: 'already_locked',
-        epoch: hpState.epoch ?? null,
-      });
-    }
-
-    const actorName =
-      tokenPayload?.name ||
-      tokenPayload?.username ||
-      tokenPayload?.email ||
-      'Collaborator';
-    const probePayload = {
-      actor: actorName,
-      requestId: randomUUID(),
-      reason: 'seed_lock_check',
-    };
-
-    const probeResult = await requestHpSeedProbe(roomName, hpConfig, probePayload);
-    if (!probeResult.ok) {
-      if (probeResult.status === 409) {
-        const data = probeResult.data || {};
-        log('info', 'seed_lock_hp_probe_denial', {
-          screenplayId,
-          reason: data.reason || 'seed_locked',
-          epoch: data.epoch ?? hpState.epoch ?? null,
-        });
+    if (req.method === 'POST') {
+      if (statusRecord.seededAt) {
         return res.status(409).json({
           granted: false,
-          reason: data.reason || 'seed_locked',
-          epoch: data.epoch ?? hpState.epoch ?? null,
+          reason: 'already_seeded',
         });
       }
-      log('error', 'seed_lock_probe_error', {
-        screenplayId,
-        error: probeResult.error,
+      if (statusRecord.seedLocked) {
+        return res.status(409).json({
+          granted: false,
+          reason: 'locked',
+          lockedBy: statusRecord.seedLockedBy || null,
+        });
+      }
+
+      await updateScreenplayMetadata(screenplayId, {
+        seedLocked: true,
+        seedLockedBy: userId,
+        seedLockedAt: new Date().toISOString(),
+        seededAt: null,
       });
-      return res.status(503).json({ error: 'hp_unavailable' });
+
+      log('info', 'seed_lock_acquired', {
+        screenplayId,
+        userId,
+      });
+      return res.status(200).json({ granted: true });
     }
 
-    const payload = probeResult.data || {};
-    return res.status(200).json({
-      granted: true,
-      epoch: payload.epoch ?? hpState.epoch ?? null,
-      lockExpiresAt: payload.lockExpiresAt ?? null,
-    });
+    if (req.method === 'DELETE') {
+      if (!statusRecord.seedLocked) {
+        return res.status(200).json({ cleared: true });
+      }
+      if (statusRecord.seedLockedBy && statusRecord.seedLockedBy !== userId) {
+        log('warn', 'seed_lock_release_forbidden', {
+          screenplayId,
+          owner: statusRecord.seedLockedBy,
+          requester: userId,
+        });
+        return res.status(403).json({ error: 'not_lock_owner' });
+      }
+
+      await updateScreenplayMetadata(screenplayId, {
+        seedLocked: false,
+        seedLockedBy: null,
+        seedLockedAt: null,
+        seededAt: new Date().toISOString(),
+      });
+
+      log('info', 'seed_lock_released', {
+        screenplayId,
+        userId,
+      });
+      return res.status(200).json({ cleared: true });
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
     log('error', 'seed_lock_handler_error', {
       screenplayId,
