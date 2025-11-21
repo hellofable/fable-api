@@ -76,10 +76,7 @@ async function ensureStatusRecord(screenplayId) {
       restoresUpdatedAt: null,
       restoreError: null,
       collaboratorIds: null,
-      seedLocked: false,
-      seedLockedBy: null,
-      seedLockedAt: null,
-      seededAt: null,
+    seedLock: null,
     });
     return record;
   }
@@ -102,10 +99,7 @@ export async function readScreenplayStatus(screenplayId) {
       restoresUpdatedAt: null,
       restoreError: null,
       collaboratorIds: null,
-      seedLocked: false,
-      seedLockedBy: null,
-      seedLockedAt: null,
-      seededAt: null,
+      seedLock: null,
     };
   }
   return record;

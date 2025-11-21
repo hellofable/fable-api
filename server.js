@@ -54,6 +54,7 @@ app.post('/api/screenplays/:id/save-lock', express.json({ limit: '2mb' }), (req,
 app.delete('/api/screenplays/:id/save-lock', (req, res) => saveLockHandler(req, res));
 app.options('/api/screenplays/:id/save-lock', (req, res) => saveLockHandler(req, res));
 app.post('/api/screenplays/:id/seed-lock', express.json({ limit: '2mb' }), (req, res) => seedLockHandler(req, res));
+app.delete('/api/screenplays/:id/seed-lock', (req, res) => seedLockHandler(req, res));
 app.options('/api/screenplays/:id/seed-lock', (req, res) => seedLockHandler(req, res));
 app.delete('/api/screenplays/:id/restore-lock', (req, res) => restoreUnlock(req, res));
 app.post('/api/tts', express.json({ limit: '2mb' }), (req, res) => tts(req, res));

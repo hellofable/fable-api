@@ -1,27 +1,40 @@
 import { applyCORS, handlePreflight } from '../../utils/cors.js';
 import { log } from '../../logger.js';
-import {
-  readScreenplayStatus,
-  updateScreenplayMetadata,
-} from './statusStore.js';
-import {
-  getPocketBaseCtor,
-  decodePocketBaseToken,
-  getScriptRecord,
-} from './helpers.js';
+import { getPocketBaseCtor, decodePocketBaseToken, getScriptRecord } from './helpers.js';
+import { readScreenplayStatus } from './statusStore.js';
 
-function isUserCollaborator(statusRecord, userId) {
-  if (!statusRecord || !userId) return false;
-  const ids = Array.isArray(statusRecord.collaboratorIds)
-    ? statusRecord.collaboratorIds
-    : [];
-  if (ids.includes(userId)) {
-    return true;
+const LOCK_TTL_MS = Number(process.env.SEED_LOCK_TTL_MS || 15000);
+const seedLocks = new Map();
+
+function clearLock(screenplayId, reason = 'timeout') {
+  const entry = seedLocks.get(screenplayId);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  seedLocks.delete(screenplayId);
+  log('info', 'seed_lock_cleared', {
+    screenplayId,
+    lockedBy: entry.lockedBy,
+    reason,
+  });
+}
+
+function scheduleLockTimeout(screenplayId) {
+  const entry = seedLocks.get(screenplayId);
+  if (!entry) return;
+  entry.timer = setTimeout(() => {
+    clearLock(screenplayId);
+  }, LOCK_TTL_MS);
+}
+
+function getLockStatus(screenplayId) {
+  const entry = seedLocks.get(screenplayId);
+  if (!entry) return null;
+  const now = Date.now();
+  if (entry.expiresAt <= now) {
+    clearLock(screenplayId);
+    return null;
   }
-  const detailed = Array.isArray(statusRecord.collaborators)
-    ? statusRecord.collaborators
-    : [];
-  return detailed.some((entry) => entry?.id === userId);
+  return entry;
 }
 
 async function resolveUserContext(pb, tokenPayload) {
@@ -89,35 +102,29 @@ export default async function handler(req, res) {
     }
 
     const statusRecord = await readScreenplayStatus(screenplayId);
-    if (!isUserCollaborator(statusRecord, userId)) {
-      log('warn', 'seed_lock_not_collaborator', {
-        screenplayId,
-        userId,
-      });
-      return res.status(403).json({ error: 'not_collaborator' });
+    if (!statusRecord) {
+      return res.status(404).json({ error: 'Screenplay status missing' });
     }
 
     if (req.method === 'POST') {
-      if (statusRecord.seededAt) {
-        return res.status(409).json({
-          granted: false,
-          reason: 'already_seeded',
-        });
-      }
-      if (statusRecord.seedLocked) {
+      const lock = getLockStatus(screenplayId);
+      if (lock) {
         return res.status(409).json({
           granted: false,
           reason: 'locked',
-          lockedBy: statusRecord.seedLockedBy || null,
+          lockedBy: lock.lockedBy,
         });
       }
 
-      await updateScreenplayMetadata(screenplayId, {
-        seedLocked: true,
-        seedLockedBy: userId,
-        seedLockedAt: new Date().toISOString(),
-        seededAt: null,
+      const now = Date.now();
+      seedLocks.set(screenplayId, {
+        locked: true,
+        lockedBy: userId,
+        lockedAt: new Date(now).toISOString(),
+        expiresAt: now + LOCK_TTL_MS,
+        timer: null,
       });
+      scheduleLockTimeout(screenplayId);
 
       log('info', 'seed_lock_acquired', {
         screenplayId,
@@ -127,25 +134,20 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
-      if (!statusRecord.seedLocked) {
+      const lock = getLockStatus(screenplayId);
+      if (!lock) {
         return res.status(200).json({ cleared: true });
       }
-      if (statusRecord.seedLockedBy && statusRecord.seedLockedBy !== userId) {
+      if (lock.lockedBy !== userId) {
         log('warn', 'seed_lock_release_forbidden', {
           screenplayId,
-          owner: statusRecord.seedLockedBy,
+          owner: lock.lockedBy,
           requester: userId,
         });
         return res.status(403).json({ error: 'not_lock_owner' });
       }
 
-      await updateScreenplayMetadata(screenplayId, {
-        seedLocked: false,
-        seedLockedBy: null,
-        seedLockedAt: null,
-        seededAt: new Date().toISOString(),
-      });
-
+      clearLock(screenplayId, 'release');
       log('info', 'seed_lock_released', {
         screenplayId,
         userId,
