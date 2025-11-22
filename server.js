@@ -23,6 +23,7 @@ import restoreUnlock from './api/screenplays/restore-lock.js';
 import saveLockHandler from './api/screenplays/save-lock.js';
 import seedLockHandler from './api/screenplays/seed-lock.js';
 import syncCollaborators from './api/screenplays/sync-collaborators.js';
+import statusInitHandler from './api/screenplays/status-init.js';
 import tts from './api/tts.js';
 
 const app = express();
@@ -53,6 +54,8 @@ app.post('/api/screenplays/:id/restore-with-lock', express.json({ limit: '2mb' }
 app.post('/api/screenplays/:id/save-lock', express.json({ limit: '2mb' }), (req, res) => saveLockHandler(req, res));
 app.delete('/api/screenplays/:id/save-lock', (req, res) => saveLockHandler(req, res));
 app.options('/api/screenplays/:id/save-lock', (req, res) => saveLockHandler(req, res));
+app.post('/api/screenplays/:id/status-init', express.json({ limit: '2mb' }), (req, res) => statusInitHandler(req, res));
+app.options('/api/screenplays/:id/status-init', (req, res) => statusInitHandler(req, res));
 app.post('/api/screenplays/:id/seed-lock', express.json({ limit: '2mb' }), (req, res) => seedLockHandler(req, res));
 app.delete('/api/screenplays/:id/seed-lock', (req, res) => seedLockHandler(req, res));
 app.options('/api/screenplays/:id/seed-lock', (req, res) => seedLockHandler(req, res));

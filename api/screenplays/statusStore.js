@@ -111,6 +111,14 @@ async function applyStatusUpdate(screenplayId, patch) {
   return pb.collection(STATUS_COLLECTION).update(record.id, patch);
 }
 
+export async function updateLatestCommitSha(screenplayId, sha, setAt = null) {
+  const now = new Date().toISOString();
+  return applyStatusUpdate(screenplayId, {
+    latestRestoredCommitSha: sha || null,
+    latestRestoredCommitSetAt: sha ? setAt || now : null,
+  });
+}
+
 export async function setScreenplayLock(screenplayId, lockPayload) {
   return applyStatusUpdate(screenplayId, lockPayload);
 }
