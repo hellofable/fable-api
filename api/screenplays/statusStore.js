@@ -114,6 +114,7 @@ async function applyStatusUpdate(screenplayId, patch) {
 export async function updateLatestCommitSha(screenplayId, sha, setAt = null) {
   const now = new Date().toISOString();
   return applyStatusUpdate(screenplayId, {
+    latestCommitSha: sha || null,
     latestRestoredCommitSha: sha || null,
     latestRestoredCommitSetAt: sha ? setAt || now : null,
   });

@@ -17,9 +17,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'screenplayId is required' });
   }
 
-  const { fountainSha } = req.body || {};
-  if (!fountainSha || typeof fountainSha !== 'string') {
-    return res.status(400).json({ error: 'fountainSha is required' });
+  const { commitSha, fountainSha } = req.body || {};
+  const effectiveSha = commitSha || fountainSha || null;
+  if (!effectiveSha || typeof effectiveSha !== 'string') {
+    return res.status(400).json({ error: 'commitSha is required' });
   }
 
   const authHeader = req.headers.authorization || '';
@@ -41,16 +42,16 @@ export default async function handler(req, res) {
       hasToken: Boolean(token),
     });
 
-    await updateLatestCommitSha(screenplayId, fountainSha);
+    await updateLatestCommitSha(screenplayId, effectiveSha);
 
     log('info', 'status_init_seeded_sha', {
       screenplayId,
-      fountainSha,
+      latestCommitSha: effectiveSha,
     });
 
     return res.status(200).json({
       screenplayId,
-      latestRestoredCommitSha: fountainSha,
+      latestCommitSha: effectiveSha,
     });
   } catch (error) {
     log('error', 'status_init_error', {
