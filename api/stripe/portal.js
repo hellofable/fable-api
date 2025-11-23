@@ -31,11 +31,32 @@ export default async function handler(req, res) {
 
   let pb;
   try {
-    const { userId, returnUrl } = req.body;
-
     const stripe = getStripe();
     pb = await getPocketBase();
 
+    // Validate PocketBase authentication token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized - missing or invalid token' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    pb.authStore.save(token);
+
+    if (!pb.authStore.isValid || !pb.authStore.model) {
+      return res.status(401).json({ error: 'Unauthorized - invalid or expired token' });
+    }
+
+    const authenticatedUserId = pb.authStore.model.id;
+
+    const { userId, returnUrl } = req.body;
+
+    // Verify authenticated user matches requested userId
+    if (authenticatedUserId !== userId) {
+      return res.status(403).json({ error: 'Forbidden - cannot access portal for another user' });
+    }
+
+    // Now authenticate as admin to fetch subscription data
     await pb.admins.authWithPassword(
       process.env.POCKETBASE_ADMIN_EMAIL,
       process.env.POCKETBASE_ADMIN_PASSWORD

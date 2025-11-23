@@ -34,7 +34,27 @@ export default async function handler(req, res) {
     const stripe = getStripe();
     pb = await getPocketBase();
 
+    // Validate PocketBase authentication token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized - missing or invalid token' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    pb.authStore.save(token);
+
+    if (!pb.authStore.isValid || !pb.authStore.model) {
+      return res.status(401).json({ error: 'Unauthorized - invalid or expired token' });
+    }
+
+    const authenticatedUserId = pb.authStore.model.id;
+
     const { userId, plan, successUrl, cancelUrl, skipTrial } = req.body;
+
+    // Verify authenticated user matches requested userId
+    if (authenticatedUserId !== userId) {
+      return res.status(403).json({ error: 'Forbidden - cannot create checkout for another user' });
+    }
 
     if (!userId || !plan || !successUrl || !cancelUrl) {
       return res.status(400).json({ error: 'Missing required fields' });

@@ -117,11 +117,14 @@ async function syncSubscriptionRecord(stripe, pb, subscription, fallbackEmail) {
     ? toIso(subscription.ended_at)
     : existing?.ended_at ?? null;
 
+  const status = subscription.status || 'trialing';
+  const hasValidSub = ['trialing', 'active'].includes(status) && !endedAt;
+
   const data = {
     userId,
     stripeCustomerId: subscription.customer,
     stripeSubscriptionId: subscription.id,
-    status: subscription.status || 'trialing',
+    status,
     plan,
     currentPeriodEnd: subscription.current_period_end
       ? new Date(subscription.current_period_end * 1000).toISOString()
@@ -138,7 +141,22 @@ async function syncSubscriptionRecord(stripe, pb, subscription, fallbackEmail) {
   if (existing) {
     await pb.collection('subscriptions').update(existing.id, data);
   } else {
+    // Before creating new subscription, delete any old ones for this user
+    const oldRecords = await pb.collection('subscriptions')
+      .getFullList({ filter: `userId="${userId}"` });
+
+    for (const old of oldRecords) {
+      await pb.collection('subscriptions').delete(old.id);
+    }
+
     existing = await pb.collection('subscriptions').create(data);
+  }
+
+  // Update hasValidSub flag on user record
+  try {
+    await pb.collection('users').update(userId, { hasValidSub });
+  } catch (err) {
+    log('error', 'stripe_sync_user_update_fail', { user_id: userId, message: err?.message });
   }
 
   const desiredMetadata = {
