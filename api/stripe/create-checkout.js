@@ -12,6 +12,17 @@ async function getPocketBase() {
   return cachedPb;
 }
 
+function decodePocketBaseToken(token) {
+  try {
+    const [, payload] = token.split('.');
+    if (!payload) return null;
+    return JSON.parse(Buffer.from(payload, 'base64').toString('utf8'));
+  } catch (error) {
+    log('error', 'checkout_decode_token_fail', { message: error?.message });
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   const requestId = randomUUID();
   const startTime = Date.now();
@@ -40,14 +51,24 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Unauthorized - missing or invalid token' });
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    pb.authStore.save(token);
+    const token = authHeader.replace('Bearer ', '').trim();
+    const tokenPayload = decodePocketBaseToken(token);
 
-    if (!pb.authStore.isValid || !pb.authStore.model) {
-      return res.status(401).json({ error: 'Unauthorized - invalid or expired token' });
+    if (!tokenPayload) {
+      return res.status(401).json({ error: 'Unauthorized - invalid token format' });
     }
 
-    const authenticatedUserId = pb.authStore.model.id;
+    const authenticatedUserId =
+      tokenPayload?.recordId ||
+      tokenPayload?.id ||
+      tokenPayload?.sub ||
+      null;
+
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: 'Unauthorized - invalid token payload' });
+    }
+
+    pb.authStore.save(token, null);
 
     const { userId, plan, successUrl, cancelUrl, skipTrial } = req.body;
 
@@ -60,14 +81,21 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // Validate token by making an API call (this will fail with 401 if token is invalid)
+    let user;
+    try {
+      user = await pb.collection('users').getOne(authenticatedUserId);
+    } catch (error) {
+      return res.status(401).json({ error: 'Unauthorized - invalid or expired token' });
+    }
+
     // Authenticate with PocketBase as admin
     await pb.admins.authWithPassword(
       process.env.POCKETBASE_ADMIN_EMAIL,
       process.env.POCKETBASE_ADMIN_PASSWORD
     );
 
-    // Get user data
-    const user = await pb.collection('users').getOne(userId);
+    // User data already fetched during token validation (variable 'user' from line 87)
 
     // Check if user already has a Stripe customer ID
     let customerId;
