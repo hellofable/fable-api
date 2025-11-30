@@ -58,9 +58,11 @@ async function fetchScreenplayStatus(pb, screenplayId) {
 
 function isUserCollaborator(statusRecord, userId) {
   if (!statusRecord || !userId) return false;
-  const collaboratorIds = Array.isArray(statusRecord.collaboratorIds)
-    ? statusRecord.collaboratorIds
-    : [];
+  const collaboratorIds = Array.isArray(statusRecord.collaboratorsId)
+    ? statusRecord.collaboratorsId
+    : Array.isArray(statusRecord.collaboratorIds)
+      ? statusRecord.collaboratorIds
+      : [];
   if (collaboratorIds.includes(userId)) {
     return true;
   }
@@ -111,7 +113,9 @@ async function maybeAddCollaboratorFromToken(statusRecord, userId, githubToken) 
 
   const existingIds = Array.isArray(statusRecord.collaboratorIds)
     ? statusRecord.collaboratorIds
-    : [];
+    : Array.isArray(statusRecord.collaboratorsId)
+      ? statusRecord.collaboratorsId
+      : [];
   if (existingIds.includes(userId)) {
     return statusRecord;
   }

@@ -23,6 +23,7 @@ import restoreUnlock from './api/screenplays/restore-lock.js';
 import saveLockHandler from './api/screenplays/save-lock.js';
 import seedLockHandler from './api/screenplays/seed-lock.js';
 import syncCollaborators from './api/screenplays/sync-collaborators.js';
+import validateCollaborator from './api/screenplays/validate-collaborator.js';
 import statusInitHandler from './api/screenplays/status-init.js';
 import tts from './api/tts.js';
 
@@ -50,6 +51,7 @@ app.post('/api/ai', express.json({ limit: '2mb' }), (req, res) => ai(req, res));
 app.post('/api/users/checkEmail', express.json({ limit: '2mb' }), (req, res) => checkEmail(req, res));
 app.post('/api/voice/create', express.json({ limit: '2mb' }), (req, res) => voiceCreate(req, res));
 app.post('/api/screenplays/:id/sync-collaborators', express.json({ limit: '2mb' }), (req, res) => syncCollaborators(req, res));
+app.post('/api/screenplays/:id/validate-collaborator', express.json({ limit: '2mb' }), (req, res) => validateCollaborator(req, res));
 app.post('/api/screenplays/:id/restore-with-lock', express.json({ limit: '2mb' }), (req, res) => restoreWithLock(req, res));
 app.post('/api/screenplays/:id/save-lock', express.json({ limit: '2mb' }), (req, res) => saveLockHandler(req, res));
 app.delete('/api/screenplays/:id/save-lock', (req, res) => saveLockHandler(req, res));
