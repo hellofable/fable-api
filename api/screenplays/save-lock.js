@@ -5,6 +5,7 @@ import {
   decodePocketBaseToken,
   getScriptRecord,
 } from './helpers.js';
+import { updateCollaboratorIds, readScreenplayStatus } from './statusStore.js';
 
 const LOCK_EXPIRY_MS = 15_000;
 
@@ -38,14 +39,20 @@ async function resolveUserContext(pb, tokenPayload) {
 }
 
 async function fetchScreenplayStatus(pb, screenplayId) {
-  const filter = buildStatusFilter(screenplayId);
+  // Prefer admin-backed read to ensure we get the record even if user lacks direct read
   try {
-    return await pb.collection('screenplay_status').getFirstListItem(filter);
+    return await readScreenplayStatus(screenplayId);
   } catch (error) {
-    if (error?.status === 404) {
-      return null;
+    // Fallback to user-context read
+    const filter = buildStatusFilter(screenplayId);
+    try {
+      return await pb.collection('screenplay_status').getFirstListItem(filter);
+    } catch (inner) {
+      if (inner?.status === 404) {
+        return null;
+      }
+      throw inner;
     }
-    throw error;
   }
 }
 
@@ -61,6 +68,60 @@ function isUserCollaborator(statusRecord, userId) {
     ? statusRecord.collaborators
     : [];
   return detailedCollaborators.some((entry) => entry?.id === userId);
+}
+
+async function validateGithubToken(githubToken) {
+  if (!githubToken) return null;
+  try {
+    const response = await fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${githubToken}`,
+        Accept: 'application/vnd.github+json',
+      },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = await response.json();
+    return payload?.id ? payload : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function maybeAddCollaboratorFromToken(statusRecord, userId, githubToken) {
+  if (!githubToken || !statusRecord || !statusRecord.screenplayId) {
+    return statusRecord;
+  }
+  const githubUser = await validateGithubToken(githubToken);
+  if (!githubUser?.id) {
+    return statusRecord;
+  }
+  const githubId = String(githubUser.id);
+  const collaboratorList = Array.isArray(statusRecord.collaborators)
+    ? statusRecord.collaborators
+    : [];
+  const isGithubCollaborator = collaboratorList.some((entry) => {
+    const entryId = entry?.githubId ?? entry?.id;
+    return entryId && String(entryId) === githubId;
+  });
+  if (!isGithubCollaborator) {
+    return statusRecord;
+  }
+
+  const existingIds = Array.isArray(statusRecord.collaboratorIds)
+    ? statusRecord.collaboratorIds
+    : [];
+  if (existingIds.includes(userId)) {
+    return statusRecord;
+  }
+
+  const nextIds = [...existingIds, userId];
+  await updateCollaboratorIds(statusRecord.screenplayId, nextIds);
+  return {
+    ...statusRecord,
+    collaboratorIds: nextIds,
+  };
 }
 
 export default async function handler(req, res) {
@@ -102,9 +163,15 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Invalid user context' });
     }
 
-    const statusRecord = await fetchScreenplayStatus(pb, screenplayId);
+    let statusRecord = await fetchScreenplayStatus(pb, screenplayId);
     if (!statusRecord) {
       return res.status(404).json({ error: 'Screenplay status not found' });
+    }
+
+    // Optional: allow token-based proof to add caller to collaboratorIds before enforcing
+    const githubTokenFromBody = req.body?.githubToken || req.body?.github_token || null;
+    if (!isUserCollaborator(statusRecord, userId)) {
+      statusRecord = await maybeAddCollaboratorFromToken(statusRecord, userId, githubTokenFromBody);
     }
 
     if (!isUserCollaborator(statusRecord, userId)) {

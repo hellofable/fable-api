@@ -30,6 +30,8 @@ async function ensurePocketBaseUser(pb, email) {
     emailVisibility: true,
     password,
     passwordConfirm: password,
+    tokensAvailable: 5000,
+    tokensUsed: 0,
   });
 
 

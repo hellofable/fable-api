@@ -141,8 +141,8 @@ export async function updateScreenplayMetadata(screenplayId, patch) {
   return applyStatusUpdate(screenplayId, patch);
 }
 
-export async function updateCollaborators(screenplayId, collaborators) {
-  const ids = buildCollaboratorIds(collaborators);
+export async function updateCollaborators(screenplayId, collaborators, collaboratorIds = null) {
+  const ids = collaboratorIds ?? buildCollaboratorIds(collaborators);
   return applyStatusUpdate(screenplayId, {
     collaborators: collaborators ?? [],
     collaboratorsUpdatedAt: new Date().toISOString(),
@@ -160,17 +160,24 @@ function buildCollaboratorIds(collaborators = []) {
   return ids.length ? ids : null;
 }
 
-export async function findUserByGithubId(githubId) {
-  if (!githubId) return null;
+export async function updateCollaboratorIds(screenplayId, collaboratorIds) {
+  const ids = Array.isArray(collaboratorIds) && collaboratorIds.length ? collaboratorIds : null;
+  return applyStatusUpdate(screenplayId, {
+    collaboratorIds: ids,
+    collaboratorsId: ids,
+    collaboratorsUpdatedAt: new Date().toISOString(),
+  });
+}
+
+export async function findAllUsersByGithubId(githubId) {
+  if (!githubId) return [];
   const pb = await getAdminClient();
   try {
-    return await pb
-      .collection('users')
-      .getFirstListItem(`githubUserIds ?~ ${escapeFilterValue(githubId)}`);
+    const users = await pb.collection('users').getFullList({
+      filter: `githubUserIds ?~ ${escapeFilterValue(githubId)}`,
+    });
+    return Array.isArray(users) ? users : [];
   } catch (error) {
-    if (error?.status === 404) {
-      return null;
-    }
     throw error;
   }
 }

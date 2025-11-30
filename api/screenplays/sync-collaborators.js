@@ -4,7 +4,6 @@ import { decodePocketBaseToken } from './helpers.js';
 import {
   readScreenplayStatus,
   updateCollaborators,
-  findUserByGithubId,
 } from './statusStore.js';
 
 const GITHUB_PER_PAGE = 100;
@@ -78,22 +77,18 @@ const INCLUDE_GITHUB_METADATA =
     .toLowerCase()
     .startsWith("true");
 
-async function buildCollaboratorsPayload(screenplayId, githubMembers) {
-  const existingStatus = await readScreenplayStatus(screenplayId);
-  const existingMap = mapExistingCollaborators(existingStatus?.collaborators);
+async function buildCollaboratorsPayload(screenplayId, githubMembers, existingStatus = null) {
+  const statusRecord = existingStatus || (await readScreenplayStatus(screenplayId));
+  const existingMap = mapExistingCollaborators(statusRecord?.collaborators);
   const results = [];
   const seen = new Set();
   const now = new Date().toISOString();
 
   for (const member of githubMembers ?? []) {
     if (!member || typeof member.id === 'undefined') continue;
-    const userRecord = await findUserByGithubId(member.id);
-    if (!userRecord) continue;
-    if (seen.has(userRecord.id)) continue;
-    seen.add(userRecord.id);
-
-    const collaboratorId = String(userRecord.id ?? "").trim();
-    if (!collaboratorId) continue;
+    const collaboratorId = String(member.id ?? "").trim();
+    if (!collaboratorId || seen.has(collaboratorId)) continue;
+    seen.add(collaboratorId);
 
     const previousEntry = existingMap.get(collaboratorId);
     const avatarUrl =
@@ -105,7 +100,8 @@ async function buildCollaboratorsPayload(screenplayId, githubMembers) {
 
     const collaboratorEntry = {
       id: collaboratorId,
-      name: getCollaboratorName(userRecord, member.login),
+      githubId: collaboratorId,
+      login: member.login ?? previousEntry?.githubUsername ?? null,
       githubUsername: member.login ?? previousEntry?.githubUsername ?? null,
       joinedAt: previousEntry?.joinedAt || now,
       avatarUrl,
@@ -158,6 +154,8 @@ export default async function handler(req, res) {
   }
 
   try {
+    const existingStatus = await readScreenplayStatus(screenplayId);
+
     const githubMembers = await fetchGitHubCollaborators({
       repoOwner,
       repoName,
@@ -167,9 +165,15 @@ export default async function handler(req, res) {
     const collaborators = await buildCollaboratorsPayload(
       screenplayId,
       githubMembers,
+      existingStatus,
     );
 
-    await updateCollaborators(screenplayId, collaborators);
+    // Preserve existing collaboratorIds (PB user relations). Do NOT derive from GitHub IDs.
+    const existingCollaboratorIds = Array.isArray(existingStatus?.collaboratorIds)
+      ? existingStatus.collaboratorIds
+      : [];
+
+    await updateCollaborators(screenplayId, collaborators, existingCollaboratorIds);
 
     const userId =
       tokenPayload?.user?.id ?? tokenPayload?.sub ?? tokenPayload?.aud ?? null;
