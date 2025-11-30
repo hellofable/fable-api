@@ -58,10 +58,10 @@ async function fetchScreenplayStatus(pb, screenplayId) {
 
 function isUserCollaborator(statusRecord, userId) {
   if (!statusRecord || !userId) return false;
-  const collaboratorIds = Array.isArray(statusRecord.collaboratorsId)
-    ? statusRecord.collaboratorsId
-    : Array.isArray(statusRecord.collaboratorIds)
-      ? statusRecord.collaboratorIds
+  const collaboratorIds = Array.isArray(statusRecord.collaboratorIds)
+    ? statusRecord.collaboratorIds
+    : Array.isArray(statusRecord.collaboratorsId)
+      ? statusRecord.collaboratorsId
       : [];
   if (collaboratorIds.includes(userId)) {
     return true;

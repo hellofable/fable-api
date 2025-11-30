@@ -147,7 +147,6 @@ export async function updateCollaborators(screenplayId, collaborators, collabora
     collaborators: collaborators ?? [],
     collaboratorsUpdatedAt: new Date().toISOString(),
     collaboratorIds: ids,
-    collaboratorsId: ids,
   });
 }
 
@@ -164,7 +163,6 @@ export async function updateCollaboratorIds(screenplayId, collaboratorIds) {
   const ids = Array.isArray(collaboratorIds) && collaboratorIds.length ? collaboratorIds : null;
   return applyStatusUpdate(screenplayId, {
     collaboratorIds: ids,
-    collaboratorsId: ids,
     collaboratorsUpdatedAt: new Date().toISOString(),
   });
 }

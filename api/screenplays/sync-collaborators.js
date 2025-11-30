@@ -171,7 +171,9 @@ export default async function handler(req, res) {
     // Preserve existing collaboratorIds (PB user relations). Do NOT derive from GitHub IDs.
     const existingCollaboratorIds = Array.isArray(existingStatus?.collaboratorIds)
       ? existingStatus.collaboratorIds
-      : [];
+      : Array.isArray(existingStatus?.collaboratorsId)
+        ? existingStatus.collaboratorsId
+        : [];
 
     await updateCollaborators(screenplayId, collaborators, existingCollaboratorIds);
 
